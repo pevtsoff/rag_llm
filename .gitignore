@@ -2,3 +2,4 @@
 faiss_store/*
 venv/*
 **__pycache__**
+.chainlit/*
