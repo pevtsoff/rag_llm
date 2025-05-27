@@ -1,33 +1,63 @@
 import os
 import sys
+import asyncio
+import traceback
 import chainlit as cl
+from httpx import Timeout
+from datetime import datetime
+from typing import List, Dict, Optional
 from langchain.schema import Document
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain_core.prompts import PromptTemplate, ChatPromptTemplate
+from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.vectorstores import VectorStore
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_community.vectorstores import FAISS
-from langchain.chains import RetrievalQA
 from langchain_ollama import OllamaLLM
-from langchain.chains import ConversationalRetrievalChain
-from langchain.memory import ConversationBufferMemory
 from langchain.chains import create_retrieval_chain, create_history_aware_retriever
 
-NUMBER_OF_RETURNED_DOCS = 30
+# Constants
+NUMBER_OF_RETURNED_DOCS = 10
 SEARCH_EXTENSIONS = {".py", ".txt", ".sh"}
-MAX_OUTPUT_TOKENS = 50
+MAX_OUTPUT_TOKENS = 400
+MAX_HISTORY_LENGTH = 20
+TIMEOUT_SECONDS = 180.0
 
+# Embedding model
 embedding_model = HuggingFaceEmbeddings(
     model_name="BAAI/bge-small-en-v1.5",
     encode_kwargs={"normalize_embeddings": True}
 )
 
 
-def load_and_split_documents(folder_path: str) -> list[Document]:
-    text_splitter = RecursiveCharacterTextSplitter(chunk_size=512, chunk_overlap=100)
+def validate_folder_path(path: str) -> bool:
+    """Check if path is a readable directory"""
+    return os.path.isdir(path) and os.access(path, os.R_OK)
+
+
+def sanitize_history(history: List[Dict]) -> List[Dict]:
+    """Ensure all history items have correct structure"""
+    clean = []
+    for msg in history[-MAX_HISTORY_LENGTH:]:  # Truncate first
+        if not isinstance(msg, dict):
+            continue
+        if "query" not in msg or "response" not in msg:
+            continue
+        clean.append({
+            "query": str(msg["query"]),
+            "response": str(msg["response"])
+        })
+    return clean
+
+
+def load_and_split_documents(folder_path: str) -> List[Document]:
+    """Load and split documents from folder"""
+    text_splitter = RecursiveCharacterTextSplitter(
+        chunk_size=512,
+        chunk_overlap=100
+    )
     documents = []
 
-    for root, dirs, files in os.walk(folder_path):
+    for root, _, files in os.walk(folder_path):
         for filename in files:
             if not any(filename.endswith(ext) for ext in SEARCH_EXTENSIONS):
                 continue
@@ -38,155 +68,154 @@ def load_and_split_documents(folder_path: str) -> list[Document]:
             try:
                 with open(filepath, 'r', encoding='utf-8') as f:
                     content = f.read()
-            except Exception:
+                chunks = text_splitter.split_text(content)
+                for chunk in chunks:
+                    documents.append(Document(
+                        page_content=chunk,
+                        metadata={"source": relative_path}
+                    ))
+            except Exception as e:
+                print(f"Error loading {filepath}: {str(e)}")
                 continue
-
-            chunks = text_splitter.split_text(content)
-            for chunk in chunks:
-                documents.append(Document(page_content=chunk, metadata={"source": relative_path}))
 
     return documents
 
 
-def show_docs_scores(vectorstore, query) -> str:
-    output = []
-    docs_and_scores = vectorstore.similarity_search_with_score(query, k=NUMBER_OF_RETURNED_DOCS)
-    for idx, (doc, score) in enumerate(docs_and_scores, start=1):
-        output.append(f"Score: {score:.4f}\nSource: {doc.metadata['source']}\n{'-' * 40}")
-    return "\n".join(output)
-
-
 def load_faiss_store(folder_path: str, embedding_model) -> VectorStore:
+    """Load or create FAISS vector store"""
     faiss_index_path = os.path.join(folder_path, ".faiss_store")
 
     if os.path.exists(faiss_index_path):
-        vectorstore = FAISS.load_local(faiss_index_path, embeddings=embedding_model,
-                                       allow_dangerous_deserialization=True)
-    else:
-        documents = load_and_split_documents(folder_path)
-        vectorstore = FAISS.from_documents(documents, embedding_model)
-        vectorstore.save_local(faiss_index_path)
+        return FAISS.load_local(
+            faiss_index_path,
+            embeddings=embedding_model,
+            allow_dangerous_deserialization=True
+        )
 
+    documents = load_and_split_documents(folder_path)
+    vectorstore = FAISS.from_documents(documents, embedding_model)
+    vectorstore.save_local(faiss_index_path)
     return vectorstore
 
 
-def main(folder_path: str, llm_query: str, chat_history: list[dict]):
-    # Load your vectorstore
-    vectorstore = load_faiss_store(folder_path, embedding_model)
+def main(folder_path: str, llm_query: str, chat_history: List[Dict]) -> tuple:
+    """Process query with conversation history"""
+    # 1. Validate inputs
+    if not validate_folder_path(folder_path):
+        raise ValueError("Invalid folder path")
 
-    # Basic retriever from vectorstore, top-k docs
+    # 2. Load vectorstore
+    vectorstore = load_faiss_store(folder_path, embedding_model)
     base_retriever = vectorstore.as_retriever(k=NUMBER_OF_RETURNED_DOCS)
 
-    # Prepare your LLM instance
-    llm = OllamaLLM(model="deepseek-r1:7b", max_tokens=MAX_OUTPUT_TOKENS)
-
-    # Define the prompt for the history-aware retriever
-    contextualize_q_prompt = ChatPromptTemplate.from_messages([
-        ("system", "Given a chat history and the latest user question, "
-                   "which might reference context in the chat history, "
-                   "rephrase the question to be a standalone question."),
-        ("user", "Chat History:\n{chat_history}\n\nQuestion: {input}")
-    ])
-
-    # Create a retriever that is aware of conversation history
-    retriever_with_history = create_history_aware_retriever(
-        llm,
-        base_retriever,
-        contextualize_q_prompt
+    # 3. Initialize LLM
+    llm = OllamaLLM(
+        model="deepseek-r1:7b",
+        num_predict=MAX_OUTPUT_TOKENS,
+        timeout=Timeout(TIMEOUT_SECONDS),
+        temperature=0.3
     )
 
-    # Define the QA prompt
+    # 4. Setup conversation chain
+    contextualize_q_prompt = ChatPromptTemplate.from_messages([
+        ("system", "Given a chat history and the latest user question, "
+                   "rephrase it to be a standalone question."),
+        ("user", "History:\n{chat_history}\n\nQuestion: {input}")
+    ])
+
     qa_prompt = ChatPromptTemplate.from_messages([
-        ("system", "You are a helpful software developer assistant. "
-                   "Answer the question based only on the following context:\n"
-                   "{context}\n\n"
-                   "If you don't know the answer, say you don't know. "
-                   "Keep your answer concise and to the point."),
+        ("system", "You are a helpful coding assistant. Answer concisely "
+                   "in 2-3 sentences max using this format:\n"
+                   "1. <Main point>\n2. <Key detail>\n\nContext:\n{context}"),
         ("user", "{input}")
     ])
 
-    # Create a retrieval chain with the history-aware retriever
-    retrieval_chain = create_retrieval_chain(
-        retriever_with_history,
-        qa_prompt | llm
+    # 5. Create chains
+    retriever_with_history = create_history_aware_retriever(
+        llm, base_retriever, contextualize_q_prompt
     )
+    retrieval_chain = create_retrieval_chain(retriever_with_history, qa_prompt | llm)
 
-    # Format chat_history for prompt
-    formatted_history = "\n".join([
-        f"User: {item['query']}\nAssistant: {item['response']}"
-        for item in chat_history
-        if "query" in item and "response" in item
-    ])
-
-    # Run the chain with query and formatted chat history
+    # 6. Execute
     result = retrieval_chain.invoke({
         "input": llm_query,
-        "chat_history": formatted_history
+        "chat_history": "\n".join(
+            f"User: {msg['query']}\nAssistant: {msg['response']}"
+            for msg in sanitize_history(chat_history)
+        )
     })
 
-    # Update chat history
-    updated_history = chat_history.copy()
-    updated_history.append({"query": llm_query, "response": result["answer"]})
-
-    return updated_history, result["answer"]
-
-
-# CLI run
-if __name__ == "__main__":
-    folder_path = sys.argv[1] if len(sys.argv) > 1 else "/home/ivan/ML/monetisation-service/"
-    llm_query = sys.argv[2] if len(
-        sys.argv) > 2 else "Can you list me the shell files which create sqs queue in the project"
-
-    if not os.path.exists(folder_path) or not os.path.isdir(folder_path):
-        print(f"Invalid folder path: {folder_path}")
-        sys.exit(1)
-
-    docs_scores, llm_response = main(folder_path, llm_query, [])
-    print("Top matching documents:\n", docs_scores)
-    print("\nLLM Response:\n", llm_response)
+    # 7. Return new history
+    new_history = [
+        *sanitize_history(chat_history),
+        {"query": llm_query, "response": result["answer"]}
+    ]
+    return new_history, result["answer"]
 
 
-# Chainlit UI handlers
 @cl.on_chat_start
-async def start():
-    cl.user_session.set("chat_history", [])  # Initialize empty chat history list
+async def init_session():
+    """Initialize new chat session"""
+    cl.user_session.set("chat_history", [])
     cl.user_session.set("folder_path", None)
-    await cl.Message(content="Please enter the **folder path** to your code directory:").send()
+    await cl.Message(content="📁 Please enter your project folder path:").send()
 
 
 @cl.on_message
 async def handle_message(message: cl.Message):
-    # Retrieve conversation history (list of messages) from session
-    chat_history = cl.user_session.get("chat_history") or []
+    """Handle incoming messages with proper Chainlit API usage"""
+    # 1. Get or initialize session state
+    chat_history = cl.user_session.get("chat_history", [])
     folder_path = cl.user_session.get("folder_path")
 
+    # 2. Handle folder path setting
     if folder_path is None:
-        folder_path_candidate = message.content.strip()
-        if not os.path.exists(folder_path_candidate) or not os.path.isdir(folder_path_candidate):
-            await cl.Message(
-                content=f"❌ Invalid path: `{folder_path_candidate}`. Please enter a valid folder path:").send()
+        path_candidate = message.content.strip()
+        if not validate_folder_path(path_candidate):
+            await cl.Message(content="❌ Invalid path. Please try again:").send()
             return
-        cl.user_session.set("folder_path", folder_path_candidate)
-        await cl.Message(
-            content=f"✅ Folder path set to `{folder_path_candidate}`.\n\nNow please enter your **query** for the LLM:").send()
+
+        cl.user_session.set("folder_path", path_candidate)
+        await cl.Message(content=f"✅ Analyzing: {path_candidate}\nAsk your question:").send()
         return
 
-    llm_query = message.content.strip()
-
-    # Show loading message
-    msg = cl.Message(content="🔍 Processing your query...")
-    await msg.send()
+    # 3. Process query - create new message instead of trying to edit
+    response_msg = cl.Message(content="")
+    await response_msg.send()
 
     try:
-        # Pass history in, get updated history and answer
-        updated_history, llm_response = main(folder_path, llm_query, chat_history)
+        # 4. Execute with timeout
+        new_history, response = await asyncio.wait_for(
+            asyncio.to_thread(main, folder_path, message.content, chat_history),
+            timeout=TIMEOUT_SECONDS
+        )
 
-        # Save updated history back to session
-        cl.user_session.set("chat_history", updated_history)
+        # 5. Update UI using proper Chainlit API
+        cl.user_session.set("chat_history", new_history)
+        response_msg.content = response
+        await response_msg.update()
 
-        # Update the loading message with the response
-        msg.content = f"💡 LLM Response:\n```\n{llm_response}\n```"
-        await msg.update()
-
+    except asyncio.TimeoutError:
+        response_msg.content = "⏳ Timeout - Please simplify your question"
+        await response_msg.update()
     except Exception as e:
-        await cl.Message(content=f"❌ An error occurred: {str(e)}").send()
+        print(f"ERROR: {traceback.format_exc()}")
+        response_msg.content = f"⚠️ Error: {str(e)}"
+        await response_msg.update()
+
+
+if __name__ == "__main__":
+    # CLI mode for testing
+    if len(sys.argv) < 2:
+        print("Usage: python script.py <folder_path> [query]")
+        sys.exit(1)
+
+    folder_path = sys.argv[1]
+    query = sys.argv[2] if len(sys.argv) > 2 else "What files are in this project?"
+
+    if not validate_folder_path(folder_path):
+        print(f"Invalid folder path: {folder_path}")
+        sys.exit(1)
+
+    history, response = main(folder_path, query, [])
+    print(f"Response: {response}")
