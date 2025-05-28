@@ -16,6 +16,7 @@ from langchain_ollama import OllamaLLM
 from langchain.chains import create_retrieval_chain, create_history_aware_retriever
 
 # Constants
+OLLAMA_MODEL="llama3.2:3b"
 NUMBER_OF_RETURNED_DOCS = 10
 SEARCH_EXTENSIONS = {".py", ".txt", ".sh"}
 MAX_OUTPUT_TOKENS = 400
@@ -112,7 +113,7 @@ def main(folder_path: str, llm_query: str, chat_history: List[Dict]) -> tuple:
 
     # 3. Initialize LLM
     llm = OllamaLLM(
-        model="deepseek-r1:7b",
+        model=OLLAMA_MODEL,
         num_predict=MAX_OUTPUT_TOKENS,
         timeout=Timeout(TIMEOUT_SECONDS),
         temperature=0.3
@@ -130,6 +131,7 @@ def main(folder_path: str, llm_query: str, chat_history: List[Dict]) -> tuple:
                    "in 2-3 sentences max using this format:\n"
                    "1. <Main point>\n2. <Key detail>\n\nContext:\n{context},"
                    "You have a strict limit of 200 tokens. Wrap up your answer clearly."
+                    "Always give out file names from the context instead of UUIDs"
          ),
         ("user", "{input}")
     ])
