@@ -21,6 +21,8 @@ SEARCH_EXTENSIONS = {".py", ".txt", ".sh"}
 MAX_OUTPUT_TOKENS = 400
 MAX_HISTORY_LENGTH = 20
 TIMEOUT_SECONDS = 180.0
+FOLDER_PATH = "/home/ivan/ML/monetisation-service/"
+QUERY = "Can you list files that create SQS queue"
 
 # Embedding model
 embedding_model = HuggingFaceEmbeddings(
@@ -126,7 +128,9 @@ def main(folder_path: str, llm_query: str, chat_history: List[Dict]) -> tuple:
     qa_prompt = ChatPromptTemplate.from_messages([
         ("system", "You are a helpful coding assistant. Answer concisely "
                    "in 2-3 sentences max using this format:\n"
-                   "1. <Main point>\n2. <Key detail>\n\nContext:\n{context}"),
+                   "1. <Main point>\n2. <Key detail>\n\nContext:\n{context},"
+                   "You have a strict limit of 200 tokens. Wrap up your answer clearly."
+         ),
         ("user", "{input}")
     ])
 
@@ -210,7 +214,7 @@ if __name__ == "__main__":
         print("Usage: python script.py <folder_path> [query]")
         sys.exit(1)
 
-    folder_path = sys.argv[1]
+    folder_path = sys.argv[1] or FOLDER_PATH
     query = sys.argv[2] if len(sys.argv) > 2 else "What files are in this project?"
 
     if not validate_folder_path(folder_path):
