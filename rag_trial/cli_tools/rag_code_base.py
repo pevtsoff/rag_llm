@@ -17,6 +17,7 @@ from langchain.chains import create_retrieval_chain, create_history_aware_retrie
 
 # Constants
 OLLAMA_MODEL = "llama3.2:3b"
+EMBEDDING_MODEL = "BAAI/bge-small-en-v1.5"
 NUMBER_OF_RETURNED_DOCS = 10
 SEARCH_EXTENSIONS = {".py", ".txt", ".sh"}
 MAX_OUTPUT_TOKENS = 400
@@ -27,7 +28,7 @@ QUERY = "Can you list files that create SQS queue"
 
 # Embedding model
 embedding_model = HuggingFaceEmbeddings(
-    model_name="BAAI/bge-small-en-v1.5", encode_kwargs={"normalize_embeddings": True}
+    model_name=EMBEDDING_MODEL, encode_kwargs={"normalize_embeddings": True}
 )
 
 
@@ -222,11 +223,12 @@ if __name__ == "__main__":
         sys.exit(1)
 
     folder_path = sys.argv[1] or FOLDER_PATH
-    query = sys.argv[2] if len(sys.argv) > 2 else "What files are in this project?"
+    query = sys.argv[2] if len(sys.argv) > 2 else QUERY
 
     if not validate_folder_path(folder_path):
         print(f"Invalid folder path: {folder_path}")
         sys.exit(1)
 
     history, response = main(folder_path, query, [])
+    print(f'Qeury is: {query}')
     print(f"Response: {response}")
