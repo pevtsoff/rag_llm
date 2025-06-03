@@ -16,7 +16,7 @@ from langchain_ollama import OllamaLLM
 from langchain.chains import create_retrieval_chain, create_history_aware_retriever
 
 # Constants
-OLLAMA_MODEL="llama3.2:3b"
+OLLAMA_MODEL = "llama3.2:3b"
 NUMBER_OF_RETURNED_DOCS = 10
 SEARCH_EXTENSIONS = {".py", ".txt", ".sh"}
 MAX_OUTPUT_TOKENS = 400
@@ -27,8 +27,7 @@ QUERY = "Can you list files that create SQS queue"
 
 # Embedding model
 embedding_model = HuggingFaceEmbeddings(
-    model_name="BAAI/bge-small-en-v1.5",
-    encode_kwargs={"normalize_embeddings": True}
+    model_name="BAAI/bge-small-en-v1.5", encode_kwargs={"normalize_embeddings": True}
 )
 
 
@@ -45,19 +44,13 @@ def sanitize_history(history: List[Dict]) -> List[Dict]:
             continue
         if "query" not in msg or "response" not in msg:
             continue
-        clean.append({
-            "query": str(msg["query"]),
-            "response": str(msg["response"])
-        })
+        clean.append({"query": str(msg["query"]), "response": str(msg["response"])})
     return clean
 
 
 def load_and_split_documents(folder_path: str) -> List[Document]:
     """Load and split documents from folder"""
-    text_splitter = RecursiveCharacterTextSplitter(
-        chunk_size=512,
-        chunk_overlap=100
-    )
+    text_splitter = RecursiveCharacterTextSplitter(chunk_size=512, chunk_overlap=100)
     documents = []
 
     for root, _, files in os.walk(folder_path):
@@ -69,14 +62,13 @@ def load_and_split_documents(folder_path: str) -> List[Document]:
             relative_path = os.path.relpath(filepath, folder_path)
 
             try:
-                with open(filepath, 'r', encoding='utf-8') as f:
+                with open(filepath, "r", encoding="utf-8") as f:
                     content = f.read()
                 chunks = text_splitter.split_text(content)
                 for chunk in chunks:
-                    documents.append(Document(
-                        page_content=chunk,
-                        metadata={"source": relative_path}
-                    ))
+                    documents.append(
+                        Document(page_content=chunk, metadata={"source": relative_path})
+                    )
             except Exception as e:
                 print(f"Error loading {filepath}: {str(e)}")
                 continue
@@ -92,7 +84,7 @@ def load_faiss_store(folder_path: str, embedding_model) -> VectorStore:
         return FAISS.load_local(
             faiss_index_path,
             embeddings=embedding_model,
-            allow_dangerous_deserialization=True
+            allow_dangerous_deserialization=True,
         )
 
     documents = load_and_split_documents(folder_path)
@@ -116,25 +108,34 @@ def main(folder_path: str, llm_query: str, chat_history: List[Dict]) -> tuple:
         model=OLLAMA_MODEL,
         num_predict=MAX_OUTPUT_TOKENS,
         timeout=Timeout(TIMEOUT_SECONDS),
-        temperature=0.3
+        temperature=0.3,
     )
 
     # 4. Setup conversation chain
-    contextualize_q_prompt = ChatPromptTemplate.from_messages([
-        ("system", "Given a chat history and the latest user question, "
-                   "rephrase it to be a standalone question."),
-        ("user", "History:\n{chat_history}\n\nQuestion: {input}")
-    ])
+    contextualize_q_prompt = ChatPromptTemplate.from_messages(
+        [
+            (
+                "system",
+                "Given a chat history and the latest user question, "
+                "rephrase it to be a standalone question.",
+            ),
+            ("user", "History:\n{chat_history}\n\nQuestion: {input}"),
+        ]
+    )
 
-    qa_prompt = ChatPromptTemplate.from_messages([
-        ("system", "You are a helpful coding assistant. Answer concisely "
-                   "in 2-3 sentences max using this format:\n"
-                   "1. <Main point>\n2. <Key detail>\n\nContext:\n{context},"
-                   "You have a strict limit of 200 tokens. Wrap up your answer clearly."
-                    "Always give out file names from the context instead of UUIDs"
-         ),
-        ("user", "{input}")
-    ])
+    qa_prompt = ChatPromptTemplate.from_messages(
+        [
+            (
+                "system",
+                "You are a helpful coding assistant. Answer concisely "
+                "in 2-3 sentences max using this format:\n"
+                "1. <Main point>\n2. <Key detail>\n\nContext:\n{context},"
+                "You have a strict limit of 200 tokens. Wrap up your answer clearly."
+                "Always give out file names from the context instead of UUIDs",
+            ),
+            ("user", "{input}"),
+        ]
+    )
 
     # 5. Create chains
     retriever_with_history = create_history_aware_retriever(
@@ -143,18 +144,20 @@ def main(folder_path: str, llm_query: str, chat_history: List[Dict]) -> tuple:
     retrieval_chain = create_retrieval_chain(retriever_with_history, qa_prompt | llm)
 
     # 6. Execute
-    result = retrieval_chain.invoke({
-        "input": llm_query,
-        "chat_history": "\n".join(
-            f"User: {msg['query']}\nAssistant: {msg['response']}"
-            for msg in sanitize_history(chat_history)
-        )
-    })
+    result = retrieval_chain.invoke(
+        {
+            "input": llm_query,
+            "chat_history": "\n".join(
+                f"User: {msg['query']}\nAssistant: {msg['response']}"
+                for msg in sanitize_history(chat_history)
+            ),
+        }
+    )
 
     # 7. Return new history
     new_history = [
         *sanitize_history(chat_history),
-        {"query": llm_query, "response": result["answer"]}
+        {"query": llm_query, "response": result["answer"]},
     ]
     return new_history, result["answer"]
 
@@ -182,7 +185,9 @@ async def handle_message(message: cl.Message):
             return
 
         cl.user_session.set("folder_path", path_candidate)
-        await cl.Message(content=f"✅ Analyzing: {path_candidate}\nAsk your question:").send()
+        await cl.Message(
+            content=f"✅ Analyzing: {path_candidate}\nAsk your question:"
+        ).send()
         return
 
     # 3. Process query - create new message instead of trying to edit
@@ -193,7 +198,7 @@ async def handle_message(message: cl.Message):
         # 4. Execute with timeout
         new_history, response = await asyncio.wait_for(
             asyncio.to_thread(main, folder_path, message.content, chat_history),
-            timeout=TIMEOUT_SECONDS
+            timeout=TIMEOUT_SECONDS,
         )
 
         # 5. Update UI using proper Chainlit API
