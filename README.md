@@ -5,12 +5,15 @@ within the folder of your documents
 ### How to launch
 1. Install ollama
 https://ollama.com/download
-2. Pull llama3.2:3b model
-3. ollama run llama3.2:3b
-4. pip install -r requirements.txt
-5. Launch
+2. Pull llama3.2:3b model with ollama
+```
+ollama pull llama3.2:3b
+ollama run llama3.2:3b 
+```
+3. poetry install
+4. Launch
 
-**UI Option:**
+**Launch Web UI:**
 
 ```
 chainlit run rag_trial/cli_tools/rag_code_base.py
@@ -21,7 +24,7 @@ In the browsers open chat window - enter the path of your code folder like:
 Enter the query about your code :)
 ```
 
-**CLI Option:**
+**Launch via CLI:**
 ```
 python rag_trial/cli_tools/rag_code_base.py "code path" "your query"
 example:
