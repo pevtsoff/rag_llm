@@ -39,7 +39,6 @@ OLLAMA_MODEL = "llama3.2:3b" # the name of the local ollama model
 EMBEDDING_MODEL = "BAAI/bge-small-en-v1.5" # the name of hugging face embedding model to vectorize documents
 NUMBER_OF_RETURNED_DOCS = 10 # Number of document that vector stor puts into the model context. The higher is better
 and thus, SLOWER! 
-SEARCH_EXTENSIONS = {".py", ".txt", ".sh"} # file filter for vector store
 MAX_OUTPUT_TOKENS = 400
 MAX_HISTORY_LENGTH = 20
 TIMEOUT_SECONDS = 180.0 # Timeout to wait a response from Ollama model
