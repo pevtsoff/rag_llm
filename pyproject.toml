@@ -17,6 +17,7 @@ chainlit = "^2.5.5"
 langchain-core = "^0.3.62"
 httpx = "^0.28.1"
 black = "^25.1.0"
+faiss-cpu = "^1.11.0"
 
 [tool.poetry.group.dev.dependencies]
 
