@@ -2,6 +2,8 @@ import os
 import sys
 import asyncio
 import traceback
+from pathlib import Path
+
 import chainlit as cl
 from httpx import Timeout
 from datetime import datetime
@@ -22,12 +24,13 @@ load_dotenv()
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2:3b")
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "BAAI/bge-small-en-v1.5")
 NUMBER_OF_RETURNED_DOCS = int(os.getenv("NUMBER_OF_RETURNED_DOCS", 10))
-SEARCH_EXTENSIONS = set(os.getenv("SEARCH_EXTENSIONS", ".py,.txt,.sh").split(","))
+SEARCH_EXTENSIONS = [".txt", ".md", ".py", ".json"]
 MAX_OUTPUT_TOKENS = int(os.getenv("MAX_OUTPUT_TOKENS", 400))
 MAX_HISTORY_LENGTH = int(os.getenv("MAX_HISTORY_LENGTH", 20))
 TIMEOUT_SECONDS = float(os.getenv("TIMEOUT_SECONDS", 180.0))
 FOLDER_PATH = os.getenv("FOLDER_PATH", "/home/ivan/ML/monetisation-service/")
 QUERY = os.getenv("QUERY", "Can you list files that create SQS queue")
+FAISS_STORE_FOLDER = Path(__file__).parent.parent.parent / ".faiss_store"
 
 # Embedding model
 embedding_model = HuggingFaceEmbeddings(
@@ -53,36 +56,35 @@ def sanitize_history(history: List[Dict]) -> List[Dict]:
 
 
 def load_and_split_documents(folder_path: str) -> List[Document]:
-    """Load and split documents from folder"""
+    """Load and split documents from folder using pathlib and recursive glob."""
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=512, chunk_overlap=100)
     documents = []
 
-    for root, _, files in os.walk(folder_path):
-        for filename in files:
-            if not any(filename.endswith(ext) for ext in SEARCH_EXTENSIONS):
-                continue
+    folder = Path(folder_path)
+    for file_path in folder.rglob("*"):
+        if file_path.suffix not in SEARCH_EXTENSIONS or not file_path.is_file():
+            continue
 
-            filepath = os.path.join(root, filename)
-            relative_path = os.path.relpath(filepath, folder_path)
+        relative_path = file_path.relative_to(folder)
 
-            try:
-                with open(filepath, "r", encoding="utf-8") as f:
-                    content = f.read()
-                chunks = text_splitter.split_text(content)
-                for chunk in chunks:
-                    documents.append(
-                        Document(page_content=chunk, metadata={"source": relative_path})
-                    )
-            except Exception as e:
-                print(f"Error loading {filepath}: {str(e)}")
-                continue
+        try:
+            content = file_path.read_text(encoding="utf-8")
+            chunks = text_splitter.split_text(content)
+            for chunk in chunks:
+                documents.append(
+                    Document(page_content=chunk, metadata={"source": str(relative_path)})
+                )
+        except Exception as e:
+            print(f"Error loading {file_path}: {e}")
+            continue
 
     return documents
 
 
 def load_faiss_store(folder_path: str, embedding_model) -> VectorStore:
     """Load or create FAISS vector store"""
-    faiss_index_path = os.path.join(folder_path, ".faiss_store")
+    save_path = folder_path.rstrip("/").split("/")[-1]
+    faiss_index_path = os.path.join(FAISS_STORE_FOLDER, save_path)
 
     if os.path.exists(faiss_index_path):
         return FAISS.load_local(
