@@ -34,6 +34,7 @@ python rag_trial/cli_tools/rag_code_base.py "/home/ivan/ML/monetisation-service/
 ```
 
 ### Key Params
+```
 OLLAMA_MODEL = "llama3.2:3b" # the name of the local ollama model
 EMBEDDING_MODEL = "BAAI/bge-small-en-v1.5" # the name of hugging face embedding model to vectorize documents
 NUMBER_OF_RETURNED_DOCS = 10 # Number of document that vector stor puts into the model context. The higher is better
@@ -44,3 +45,4 @@ MAX_HISTORY_LENGTH = 20
 TIMEOUT_SECONDS = 180.0 # Timeout to wait a response from Ollama model
 FOLDER_PATH = "/home/ivan/ML/monetisation-service/" # Path to Your Code or document folder
 QUERY = "Can you list files that create SQS queue" # CLI query to LLM model
+```
