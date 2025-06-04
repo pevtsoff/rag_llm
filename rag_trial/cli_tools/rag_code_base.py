@@ -14,17 +14,20 @@ from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_community.vectorstores import FAISS
 from langchain_ollama import OllamaLLM
 from langchain.chains import create_retrieval_chain, create_history_aware_retriever
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # Constants
-OLLAMA_MODEL = "llama3.2:3b"
-EMBEDDING_MODEL = "BAAI/bge-small-en-v1.5"
-NUMBER_OF_RETURNED_DOCS = 10
-SEARCH_EXTENSIONS = {".py", ".txt", ".sh"}
-MAX_OUTPUT_TOKENS = 400
-MAX_HISTORY_LENGTH = 20
-TIMEOUT_SECONDS = 180.0
-FOLDER_PATH = "/home/ivan/ML/monetisation-service/"
-QUERY = "Can you list files that create SQS queue"
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2:3b")
+EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "BAAI/bge-small-en-v1.5")
+NUMBER_OF_RETURNED_DOCS = int(os.getenv("NUMBER_OF_RETURNED_DOCS", 10))
+SEARCH_EXTENSIONS = set(os.getenv("SEARCH_EXTENSIONS", ".py,.txt,.sh").split(","))
+MAX_OUTPUT_TOKENS = int(os.getenv("MAX_OUTPUT_TOKENS", 400))
+MAX_HISTORY_LENGTH = int(os.getenv("MAX_HISTORY_LENGTH", 20))
+TIMEOUT_SECONDS = float(os.getenv("TIMEOUT_SECONDS", 180.0))
+FOLDER_PATH = os.getenv("FOLDER_PATH", "/home/ivan/ML/monetisation-service/")
+QUERY = os.getenv("QUERY", "Can you list files that create SQS queue")
 
 # Embedding model
 embedding_model = HuggingFaceEmbeddings(

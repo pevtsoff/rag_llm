@@ -11,7 +11,8 @@ ollama pull llama3.2:3b
 ollama run llama3.2:3b 
 ```
 3. poetry install
-4. Launch
+4. Update .env file with your params 
+5. Launch
 
 **Launch Web UI:**
 

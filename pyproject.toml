@@ -18,9 +18,7 @@ langchain-core = "^0.3.62"
 httpx = "^0.28.1"
 black = "^25.1.0"
 faiss-cpu = "^1.11.0"
-
-[tool.poetry.group.dev.dependencies]
-
+python-dotenv = "^1.1.0"
 
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]
