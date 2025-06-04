@@ -72,7 +72,9 @@ def load_and_split_documents(folder_path: str) -> List[Document]:
             chunks = text_splitter.split_text(content)
             for chunk in chunks:
                 documents.append(
-                    Document(page_content=chunk, metadata={"source": str(relative_path)})
+                    Document(
+                        page_content=chunk, metadata={"source": str(relative_path)}
+                    )
                 )
         except Exception as e:
             print(f"Error loading {file_path}: {e}")
@@ -169,7 +171,7 @@ def main(folder_path: str, llm_query: str, chat_history: List[Dict]) -> tuple:
 
 
 @cl.on_chat_start
-async def init_session():
+async def init_session() -> None:
     """Initialize new chat session"""
     cl.user_session.set("chat_history", [])
     cl.user_session.set("folder_path", None)
@@ -177,7 +179,7 @@ async def init_session():
 
 
 @cl.on_message
-async def handle_message(message: cl.Message):
+async def handle_message(message: cl.Message) -> None:
     """Handle incoming messages with proper Chainlit API usage"""
     # 1. Get or initialize session state
     chat_history = cl.user_session.get("chat_history", [])
@@ -235,5 +237,5 @@ if __name__ == "__main__":
         sys.exit(1)
 
     history, response = main(folder_path, query, [])
-    print(f'Qeury is: {query}')
+    print(f"Qeury is: {query}")
     print(f"Response: {response}")
