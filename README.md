@@ -5,10 +5,12 @@ within the folder of your documents
 ### How to launch
 1. Install ollama
 https://ollama.com/download
-2. Pull llama3.2:3b model with ollama
+2. Pull any model from ollama repo which you can run locally. I would recommend anything like llama3.2:3b model 
+up to 8-16b params. The larger models will run pretty slow without powerful GPU
+
 ```
 ollama pull llama3.2:3b
-ollama run llama3.2:3b 
+ollama run llama3.2:3b (just to check it works, as it will be launched automatically from the script) 
 ```
 3. poetry install
 4. Update .env file with your params 
